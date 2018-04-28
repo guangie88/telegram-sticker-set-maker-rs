@@ -1,0 +1,30 @@
+[package]
+name = "telegram-sticker-set-maker"
+version = "0.1.0"
+authors = ["Chen Weiguang <chen.weiguang@gmail.com>"]
+description = "Telegram sticker set making executable in Rust"
+repository = "https://github.com/guangie88/telegram-sticker-set-maker-rs"
+readme = "README.md"
+categories = ["command-line-utilities"]
+license = "MIT"
+
+[badges]
+travis-ci = { repository = "guangie88/telegram-sticker-set-maker-rs" }
+codecov = { repository = "guangie88/telegram-sticker-set-maker-rs" }
+
+[dependencies]
+failure = "=0.1.1"
+glob = "=0.2.11"
+regex = "=0.2.10"
+reqwest = "=0.8.5"
+serde = "=1.0.43"
+serde_derive = "=1.0.43"
+structopt = "=0.2.7"
+structopt-derive = "=0.2.7"
+toml = "=0.4.6"
+url = "=1.7.0"
+vlog = "=0.1.2"
+
+[[bin]]
+name = "tssm"
+path = "src/main.rs"
