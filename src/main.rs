@@ -215,10 +215,15 @@ fn run(conf: &Conf) -> Result<()> {
         }
 
         v1!(
-            "Created sticker set name: \"{}\", title: {}, # of stickers: {}",
+            "New sticker set name: \"{}\", title: {}, # of stickers: {}",
             sticker_set_name,
             &conf.sticker_set_title,
             image_paths.len(),
+        );
+
+        v0!(
+            "Click in Telegram to add: https://t.me/addstickers/{}",
+            sticker_set_name
         );
     } else {
         v0!("No stickers found, no sticker set created!");
