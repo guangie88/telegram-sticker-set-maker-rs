@@ -20,7 +20,7 @@ extern crate vlog;
 use glob::glob;
 use regex::Regex;
 use reqwest::multipart::Form;
-use reqwest::{Client, RequestBuilder, StatusCode, Url};
+use reqwest::{ClientBuilder, RequestBuilder, StatusCode, Url};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -150,7 +150,10 @@ fn run(conf: &Conf) -> Result<()> {
     ))?;
 
     if let Some((first_path, rest_paths)) = image_paths.split_first() {
-        let client = Client::new();
+        // disable timeout
+        let mut builder = ClientBuilder::new();
+        builder.timeout(None);
+        let client = builder.build()?;
 
         let sticker_set_name =
             format!("{}_by_{}", conf.sticker_set_name, auth.bot_name);
