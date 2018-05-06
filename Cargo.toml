@@ -13,6 +13,7 @@ travis-ci = { repository = "guangie88/telegram-sticker-set-maker-rs" }
 codecov = { repository = "guangie88/telegram-sticker-set-maker-rs" }
 
 [dependencies]
+emojicons = "=1.0.1"
 failure = "=0.1.1"
 glob = "=0.2.11"
 regex = "=0.2.10"

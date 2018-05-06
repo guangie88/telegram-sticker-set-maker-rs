@@ -1,6 +1,7 @@
 #![cfg_attr(feature = "cargo-clippy", deny(clippy))]
 #![deny(missing_debug_implementations, warnings)]
 
+extern crate emojicons;
 #[macro_use]
 extern crate failure;
 extern crate glob;
@@ -17,74 +18,28 @@ extern crate url;
 #[macro_use]
 extern crate vlog;
 
+mod structs;
+
 use glob::glob;
 use regex::Regex;
 use reqwest::multipart::Form;
 use reqwest::{ClientBuilder, RequestBuilder, StatusCode, Url};
 use std::fs::File;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::ops::Deref;
+use std::path::Path;
 use structopt::StructOpt;
+use structs::{Auth, Conf, EmojiMapping, StickerEmojiMapping};
 
 type Result<T> = std::result::Result<T, failure::Error>;
 
-const TELEGRAM_BOT_API: &str = "https://api.telegram.org/bot";
-const CREATE_NEW_STICKER_SET_EP: &str = "/createNewStickerSet";
+// endpoints
 const ADD_STICKER_TO_SET_EP: &str = "/addStickerToSet";
+const CREATE_NEW_STICKER_SET_EP: &str = "/createNewStickerSet";
 
+// other constants
 const BOT_TOKEN_SPLIT_RE: &str = r"(\d+):(.+)";
-
-#[derive(Deserialize)]
-/// Configuration for Telegram required authentication values
-struct Auth {
-    /// Bot token whose format is <BOT_ID>:<REST_OF_TOKEN>
-    bot_token: String,
-
-    /// Bot name, used for sticker set suffix
-    bot_name: String,
-
-    /// User ID to put the new sticker set under
-    user_id: String,
-}
-
-#[derive(StructOpt, Debug)]
-#[structopt(name = "telegram-sticker-set-maker-conf")]
-/// Configuration for telegram-sticker-set-maker
-struct Conf {
-    /// Input directory with the 512 px sized PNG image files
-    #[structopt(parse(from_os_str))]
-    indir: PathBuf,
-
-    #[structopt(
-        short = "a",
-        long = "auth",
-        default_value = ".telegram-auth.toml",
-        parse(from_os_str)
-    )]
-    /// File path to required Telegram authentication values
-    auth_path: PathBuf,
-
-    #[structopt(short = "g", long = "glob", default_value = "*.png")]
-    /// Glob pattern to get PNG image files
-    glob: String,
-
-    #[structopt(short = "n", long = "name")]
-    /// Sticker set name without bot suffix.
-    /// Must not contain spaces and must be unique.
-    sticker_set_name: String,
-
-    #[structopt(short = "t", long = "title")]
-    /// Sticker set title, human-reading friendly name of the sticker set
-    sticker_set_title: String,
-
-    #[structopt(short = "e", long = "emoji", default_value = "😄")]
-    /// Emoji to assign to every sticker in the set
-    emoji: String,
-
-    #[structopt(short = "v", parse(from_occurrences))]
-    /// Verbose flag (-v, -vv, -vvv)
-    verbose: u8,
-}
+const TELEGRAM_BOT_API: &str = "https://api.telegram.org/bot";
 
 fn add_png_sticker<P>(req: &mut RequestBuilder, image_path: P) -> Result<()>
 where
@@ -93,6 +48,38 @@ where
     let form = Form::new().file("png_sticker", image_path.as_ref())?;
     req.multipart(form);
     Ok(())
+}
+
+/// Returns at least one emoji (one emoji is one unicode char).
+fn get_emojis<P>(
+    file_path: P,
+    mapping: Option<&StickerEmojiMapping>,
+    default_emoji: &str,
+) -> String
+where
+    P: AsRef<Path>,
+{
+    let file_name = file_path.as_ref().file_name();
+
+    let emoji_mapping = file_name
+        .and_then(|file_name| mapping.map(|mapping| (file_name, mapping)))
+        .and_then(|(file_name, mapping)| {
+            mapping.get(file_name.to_string_lossy().as_ref())
+        });
+
+    match emoji_mapping {
+        Some(&EmojiMapping::Single(ref emoji)) => emoji.to_string(),
+        Some(&EmojiMapping::Multi(ref emojis)) => {
+            let mut s = String::new();
+
+            for emoji in emojis {
+                s.push(*emoji.deref())
+            }
+
+            s
+        }
+        None => default_emoji.to_owned(),
+    }
 }
 
 fn run(conf: &Conf) -> Result<()> {
@@ -104,6 +91,17 @@ fn run(conf: &Conf) -> Result<()> {
             &conf.indir
         ))?
     }
+
+    // get emoji mapping if available
+    let emoji_mapping: Option<StickerEmojiMapping> =
+        if let Some(ref mapping_path) = conf.emoji_mapping {
+            let mut mapping_file = File::open(mapping_path)?;
+            let mut content = String::new();
+            mapping_file.read_to_string(&mut content)?;
+            Some(toml::from_str(&content)?)
+        } else {
+            None
+        };
 
     let merged_glob = {
         let mut indir = conf.indir.clone();
@@ -168,7 +166,14 @@ fn run(conf: &Conf) -> Result<()> {
                 ("user_id", &auth.user_id),
                 ("name", &sticker_set_name),
                 ("title", &conf.sticker_set_title),
-                ("emojis", &conf.emoji),
+                (
+                    "emojis",
+                    &get_emojis(
+                        &first_path,
+                        emoji_mapping.as_ref(),
+                        &conf.default_emoji,
+                    ),
+                ),
             ]);
 
             v3!("{:?}", req);
@@ -196,7 +201,14 @@ fn run(conf: &Conf) -> Result<()> {
             req.query(&[
                 ("user_id", &auth.user_id),
                 ("name", &sticker_set_name),
-                ("emojis", &conf.emoji),
+                (
+                    "emojis",
+                    &get_emojis(
+                        &rest_path,
+                        emoji_mapping.as_ref(),
+                        &conf.default_emoji,
+                    ),
+                ),
             ]);
 
             v3!("{:?}", req);
@@ -241,5 +253,48 @@ fn main() {
     match run(&conf) {
         Ok(_) => v1!("telegram-sticker-set-maker COMPLETED!"),
         Err(e) => ve0!("{}", e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_emoji_map_valid_1() {
+        const CONTENT: &str = "";
+        let mapping = toml::from_str::<StickerEmojiMapping>(CONTENT);
+        assert!(mapping.is_ok());
+    }
+
+    #[test]
+    fn test_emoji_map_valid_2() {
+        const CONTENT: &str = r#"
+            "1192266.png" = "wink"
+        "#;
+
+        let mapping = toml::from_str::<StickerEmojiMapping>(CONTENT);
+        assert!(mapping.is_ok());
+    }
+
+    #[test]
+    fn test_emoji_map_valid_3() {
+        const CONTENT: &str = r#"
+            "1192267.png" = ["blush", "relaxed"]
+        "#;
+
+        let mapping = toml::from_str::<StickerEmojiMapping>(CONTENT);
+        assert!(mapping.is_ok());
+    }
+
+    #[test]
+    fn test_emoji_map_valid_4() {
+        const CONTENT: &str = r#"
+            "1192266.png" = "wink"
+            "1192267.png" = ["blush", "relaxed"]
+        "#;
+
+        let mapping = toml::from_str::<StickerEmojiMapping>(CONTENT);
+        assert!(mapping.is_ok());
     }
 }
