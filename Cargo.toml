@@ -13,18 +13,20 @@ travis-ci = { repository = "guangie88/telegram-sticker-set-maker-rs" }
 codecov = { repository = "guangie88/telegram-sticker-set-maker-rs" }
 
 [dependencies]
-emojicons = "=1.0.1"
-failure = "=0.1.1"
-glob = "=0.2.11"
-regex = "=0.2.10"
-reqwest = "=0.8.5"
-serde = "=1.0.43"
-serde_derive = "=1.0.43"
-structopt = "=0.2.7"
-structopt-derive = "=0.2.7"
-toml = "=0.4.6"
-url = "=1.7.0"
-vlog = "=0.1.2"
+emojicons = "1.0.1"
+failure = "0.1.1"
+glob = "0.2.11"
+regex = "1.0.2"
+reqwest = "0.8.6"
+serde = "1.0.70"
+serde_derive = "1.0.70"
+structopt = "0.2.10"
+structopt-derive = "0.2.10"
+telepathy = "0.0.1"
+toml = "0.4.6"
+url = "1.7.1"
+vec1 = { version = "1.1.0", features = ["serde"] }
+vlog = "0.1.4"
 
 [[bin]]
 name = "tssm"

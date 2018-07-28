@@ -9,30 +9,50 @@ env:
 matrix:
   include:
   - services: docker
+    os: linux
     env:
       - LINT=true
       - PUBLISH=true
   - services: docker
+    os: linux
     env:
       - ARTIFACT=true
       - ARTIFACTS_DIR=./artifacts
   - services: docker
+    os: linux
     env:
       - COVERAGE=true
   - rust: stable
+    os: linux
+    sudo: false
+  - rust: stable
+    os: osx
+    env:
+    - OSX_ARTIFACT=true
+    - ARTIFACTS_DIR=./artifacts
     sudo: false
   - rust: beta
+    os: linux
     sudo: false
   - rust: nightly
+    os: linux
     sudo: false
   fast_finish: true
 
-before_script:
+before_install:
 - set -e
+
+install:
+- |
+  if [ "$TRAVIS_OS_NAME" = "osx" ]; then
+    brew install jq
+  fi
+
+before_script:
 - |
   if [ "$LINT" = "true" ]; then
     docker-compose -f docker-compose.lint-test.yml build lint-test
-  elif [ "$ARTIFACT" = "true" ]; then
+  elif [ "$ARTIFACT" = "true" ] || [ "$OSX_ARTIFACT" = "true" ]; then
     echo "Artifact not dealing with 'before_script'"
   elif [ "$COVERAGE" = "true" ]; then
     echo "Coverage not dealing with 'before_script'"
@@ -48,29 +68,39 @@ script:
     docker-compose -f docker-compose.build.yml run -u $UID:`id -g` build
     mkdir $ARTIFACTS_DIR
     cp ./target/x86_64-unknown-linux-musl/release/$BINARY_NAME $ARTIFACTS_DIR
+  elif [ "$OSX_ARTIFACT" = "true" ]; then
+    cargo build --release --all --verbose
+    mkdir $ARTIFACTS_DIR
+    cp ./target/release/$BINARY_NAME $ARTIFACTS_DIR
   elif [ "$COVERAGE" = "true" ]; then
     echo "Coverage not dealing with 'script'"
   else
-    cargo doc --all
+    cargo doc --no-deps
     cargo test --all --verbose
   fi
 
 after_success:
 - |
-  if [ "$PUBLISH" = "true" ] && [ -n "$TRAVIS_TAG" ]; then
-    # publish when this is a new tag
+  if [ "$PUBLISH" = "true" ]; then
     cargo login "$CRATES_TOKEN"
-    cargo publish
-  elif [ "$ARTIFACT" = "true" ] && [ -n "$TRAVIS_TAG" ]; then
+
+    if [ -n "$TRAVIS_TAG" ]; then
+      # publish when this is a new tag
+      # not seriously publishing
+      echo "Simulate 'cargo login' and 'cargo publish'"
+    else
+      cargo publish --dry-run --verbose
+    fi
+  elif { [ "$ARTIFACT" = "true" ] || [ "$OSX_ARTIFACT" = "true" ]; } && [ -n "$TRAVIS_TAG" ]; then
     # upload binary artifact when this is a new tag
     # this needs to be jq processed to extract out the `id` value
-    TAG_ID=$(curl -X GET \
+    export TAG_ID=$(curl -X GET \
       -H "Authorization: token $GITHUB_TOKEN" \
       "https://api.github.com/repos/$REPO_USERNAME/$REPO_NAME/releases" \
       | jq -r '.[] | select(.tag_name == "'$TRAVIS_TAG'").id')
 
     # formulate zip
-    ZIP_SUFFIX=`uname -s | tr '[:upper:]' '[:lower:]'`-`uname -i`
+    ZIP_SUFFIX=`uname -s | tr '[:upper:]' '[:lower:]'`-`uname -p`
     ZIP_FILE=$BINARY_NAME-$TRAVIS_TAG-$ZIP_SUFFIX.zip
     zip -j $ZIP_FILE "$ARTIFACTS_DIR/$BINARY_NAME"
 
@@ -80,12 +110,10 @@ after_success:
       --upload-file $ZIP_FILE \
       "https://uploads.github.com/repos/$REPO_USERNAME/$REPO_NAME/releases/$TAG_ID/assets?name=$ZIP_FILE"
   elif [ "$COVERAGE" = "true" ] && [ -z "$TRAVIS_TAG" ]; then
-    echo "Not running coverage due to bug in Rust compiler"
-    
-    # docker run --security-opt seccomp=unconfined -v "$PWD:/volume" \
-    #   guangie88/ubuntu-cargo-tarpaulin:xenial-stable "
-    #     cargo tarpaulin --all --out Xml \
-    #     && bash <(curl -s https://codecov.io/bash) -t $CODECOV_TOKEN"
+    docker run --security-opt seccomp=unconfined -v "$PWD:/volume" \
+      guangie88/ubuntu-cargo-tarpaulin:xenial-stable "
+        cargo tarpaulin --all --out Xml \
+        && bash <(curl -s https://codecov.io/bash) -t $CODECOV_TOKEN"
   fi
 
 branches:

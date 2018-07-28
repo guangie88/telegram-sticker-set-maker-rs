@@ -7,7 +7,4 @@ services:
     command:
       - bash
       - '-c'
-      - 'rustfmt --write-mode=diff
-           src/**.rs 
-         && cargo clippy --all
-         && cargo test --all'
+      - 'cargo fmt -- src/**.rs --write-mode check && cargo test --all'

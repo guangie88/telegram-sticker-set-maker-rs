@@ -1,12 +1,12 @@
-FROM guangie88/rustfmt-clippy:nightly-2018-04-18
+FROM guangie88/rs-cider:1.27.2
 
 WORKDIR /app
-COPY ./Cargo.toml ./Cargo.lock ./rustfmt.toml ./
+COPY ./Cargo.toml ./rustfmt.toml ./
 
 RUN set -x \
-    && cargo fetch --locked -v
+    && cargo fetch -v
 
 COPY ./src/ ./src/
 
-RUN cargo clippy --all \
+RUN RUSTFLAGS="-D warnings" cargo +nightly clippy --all \
     && cargo test --all --no-run
